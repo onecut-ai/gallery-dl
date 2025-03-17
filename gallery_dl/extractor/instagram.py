@@ -176,6 +176,7 @@ class InstagramExtractor(Extractor):
                 "pinned": self._extract_pinned(post),
                 "views": post.get("play_count"),
                 "duration": post.get("video_duration"),
+                "comment_count": post.get("comment_count"),
             }
 
             caption = post["caption"]
