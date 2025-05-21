@@ -104,7 +104,7 @@ class RedditExtractor(Extractor):
 
                 if self.api.comments:
                     for comment in comments:
-                        html = comment["body"] or ""
+                        html = comment["body_html"] or ""
                         href = (' href="' in html)
                         media = (embeds and "media_metadata" in comment)
 
@@ -127,7 +127,8 @@ class RedditExtractor(Extractor):
                             for url in text.extract_iter(html, ' href="', '"'):
                                 urls.append((url, data))
                         if html:
-                            urls.append((comment["permalink"], comment))
+                            yield Message.Directory, comment
+                            visited.add(comment["id"])
 
                 for url, data in urls:
                     if not url or url[0] == "#":
