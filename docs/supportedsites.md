@@ -148,7 +148,7 @@ Consider all listed sites to potentially be NSFW.
 <tr>
     <td>Bluesky</td>
     <td>https://bsky.app/</td>
-    <td>Avatars, Backgrounds, Feeds, Followed Users, Hashtags, User Profile Information, Likes, Lists, Media Files, Posts, Replies, Search Results, User Profiles</td>
+    <td>Avatars, Backgrounds, Feeds, Followed Users, Hashtags, User Profile Information, Likes, Lists, Media Files, Posts, Replies, Search Results, User Profiles, Videos</td>
     <td>Supported</td>
 </tr>
 <tr>
@@ -466,7 +466,7 @@ Consider all listed sites to potentially be NSFW.
 <tr>
     <td>Instagram</td>
     <td>https://www.instagram.com/</td>
-    <td>Avatars, Collections, Followed Users, Guides, Highlights, User Profile Information, Posts, Reels, Saved Posts, Stories, Tag Searches, Tagged Posts, User Profiles</td>
+    <td>Avatars, Collections, Followers, Followed Users, Guides, Highlights, User Profile Information, Posts, Reels, Saved Posts, Stories, Tag Searches, Tagged Posts, User Profiles</td>
     <td><a href="https://github.com/mikf/gallery-dl#cookies">Cookies</a></td>
 </tr>
 <tr>
@@ -478,7 +478,7 @@ Consider all listed sites to potentially be NSFW.
 <tr>
     <td>Itaku</td>
     <td>https://itaku.ee/</td>
-    <td>Galleries, individual Images, Search Results</td>
+    <td>Galleries, individual Images, Search Results, Stars</td>
     <td></td>
 </tr>
 <tr>
@@ -562,24 +562,12 @@ Consider all listed sites to potentially be NSFW.
 <tr>
     <td>MangaDex</td>
     <td>https://mangadex.org/</td>
-    <td>Authors, Chapters, Followed Feed, Lists, Manga</td>
+    <td>Authors, Chapters, Updates Feed, Library, MDLists, Manga</td>
     <td>Supported</td>
-</tr>
-<tr>
-    <td>MangaKakalot</td>
-    <td>https://mangakakalot.tv/</td>
-    <td>Chapters, Manga</td>
-    <td></td>
 </tr>
 <tr>
     <td>MangaLife</td>
     <td>https://manga4life.com/</td>
-    <td>Chapters, Manga</td>
-    <td></td>
-</tr>
-<tr>
-    <td>Manganato</td>
-    <td>https://manganato.com/</td>
     <td>Chapters, Manga</td>
     <td></td>
 </tr>
@@ -689,6 +677,12 @@ Consider all listed sites to potentially be NSFW.
     <td>Picarto</td>
     <td>https://picarto.tv/</td>
     <td>Galleries</td>
+    <td></td>
+</tr>
+<tr>
+    <td>Pictoa</td>
+    <td>https://pictoa.com/</td>
+    <td>Albums, individual Images</td>
     <td></td>
 </tr>
 <tr>
@@ -998,7 +992,7 @@ Consider all listed sites to potentially be NSFW.
 <tr>
     <td>Twitter</td>
     <td>https://x.com/</td>
-    <td>Avatars, Backgrounds, Bookmarks, Communities, Events, Followed Users, Hashtags, individual Images, User Profile Information, Likes, Lists, List Members, Media Timelines, Quotes, Search Results, Timelines, Tweets, User Profiles</td>
+    <td>Avatars, Backgrounds, Bookmarks, Communities, Events, Followers, Followed Users, Hashtags, individual Images, User Profile Information, Likes, Lists, List Members, Media Timelines, Quotes, Search Results, Timelines, Tweets, User Profiles</td>
     <td>Supported</td>
 </tr>
 <tr>
@@ -1399,6 +1393,34 @@ Consider all listed sites to potentially be NSFW.
     <td>Endchan</td>
     <td>https://endchan.org/</td>
     <td>Boards, Threads</td>
+    <td></td>
+</tr>
+
+<tr>
+    <td colspan="4"><strong>MangaNelo and Mirror Sites</strong></td>
+</tr>
+<tr>
+    <td>MangaNelo</td>
+    <td>https://www.nelomanga.net/</td>
+    <td>Chapters, Manga</td>
+    <td></td>
+</tr>
+<tr>
+    <td>MangaNato</td>
+    <td>https://www.natomanga.com/</td>
+    <td>Chapters, Manga</td>
+    <td></td>
+</tr>
+<tr>
+    <td>MangaNato</td>
+    <td>https://www.manganato.gg/</td>
+    <td>Chapters, Manga</td>
+    <td></td>
+</tr>
+<tr>
+    <td>MangaKakalot</td>
+    <td>https://www.mangakakalot.gg/</td>
+    <td>Chapters, Manga</td>
     <td></td>
 </tr>
 

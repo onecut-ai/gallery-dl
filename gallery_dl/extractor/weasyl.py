@@ -7,7 +7,7 @@
 """Extractors for https://www.weasyl.com/"""
 
 from .common import Extractor, Message
-from .. import text
+from .. import text, util
 
 BASE_PATTERN = r"(?:https://)?(?:www\.)?weasyl.com/"
 
@@ -18,6 +18,7 @@ class WeasylExtractor(Extractor):
     filename_fmt = "{submitid} {title}.{extension}"
     archive_fmt = "{submitid}"
     root = "https://www.weasyl.com"
+    useragent = util.USERAGENT
 
     @staticmethod
     def populate_submission(data):
@@ -71,7 +72,7 @@ class WeasylExtractor(Extractor):
 
 class WeasylSubmissionExtractor(WeasylExtractor):
     subcategory = "submission"
-    pattern = BASE_PATTERN + r"(?:~[\w~-]+/submissions|submission)/(\d+)"
+    pattern = BASE_PATTERN + r"(?:~[\w~-]+/submissions|submission|view)/(\d+)"
     example = "https://www.weasyl.com/~USER/submissions/12345/TITLE"
 
     def __init__(self, match):

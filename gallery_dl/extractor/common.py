@@ -59,7 +59,7 @@ class Extractor():
     @classmethod
     def from_url(cls, url):
         if isinstance(cls.pattern, str):
-            cls.pattern = re.compile(cls.pattern)
+            cls.pattern = util.re_compile(cls.pattern)
         match = cls.pattern.match(url)
         return cls(match) if match else None
 
@@ -239,6 +239,11 @@ class Extractor():
             tries += 1
 
         raise exception.HttpError(msg, response)
+
+    def request_location(self, url, **kwargs):
+        kwargs.setdefault("method", "HEAD")
+        kwargs.setdefault("allow_redirects", False)
+        return self.request(url, **kwargs).headers.get("location", "")
 
     _handle_429 = util.false
 
