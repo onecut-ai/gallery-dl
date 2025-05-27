@@ -120,6 +120,7 @@ class FacebookExtractor(Extractor):
         text.nameext_from_url(photo["url"], photo)
 
         photo["followups_ids"] = []
+        times = []
         for comment_raw in text.extract_iter(
             photo_page, '{"node":{"id"', '"cursor":null}'
         ):
@@ -130,7 +131,27 @@ class FacebookExtractor(Extractor):
                     '{"__typename":"Photo","id":"',
                     '"'
                 ))
+            times.append(
+                text.parse_timestamp(text.extr(comment_raw, '"created_time":', ',"'))
+            )
+        import json
 
+        texts = list(text.extract_iter(photo_page, 'body":{"text":"', '","ranges"'))
+        authors = [
+            json.loads(x)["name"]
+            for x in list(text.extract_iter(photo_page, '"author":', ',"is_author'))
+        ]
+        comments = [
+            {
+                "author": a,
+                "text": t,
+                "date": d,
+            }
+            for a, t, d in zip(authors, texts, times)
+            if t
+        ]
+        if comments:
+            photo["comments"] = comments
         return photo
 
     @staticmethod
