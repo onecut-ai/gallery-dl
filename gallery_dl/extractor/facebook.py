@@ -6,6 +6,7 @@
 
 """Extractors for https://www.facebook.com/"""
 
+import json
 from .common import Extractor, Message
 from .. import text, exception
 
@@ -134,7 +135,6 @@ class FacebookExtractor(Extractor):
             times.append(
                 text.parse_timestamp(text.extr(comment_raw, '"created_time":', ',"'))
             )
-        import json
 
         texts = list(text.extract_iter(photo_page, 'body":{"text":"', '","ranges"'))
         authors = [
@@ -461,3 +461,147 @@ class FacebookProfileExtractor(FacebookExtractor):
 
         self.log.debug("Profile photos set ID not found.")
         return iter(())
+
+
+class FacebookCommentExtractor(FacebookExtractor):
+    """Base class for Facebook Profile Photos Set extractors"""
+    subcategory = "comments"
+    pattern = (
+        BASE_PATTERN +
+        r"/groups/([^/?&#]+)/posts/([^/?&#]+)"
+    )
+    example = "https://www.facebook.com/groups/238620256823178/posts/1693941581291031"
+    expansion_key = "__cft__[1]="
+    suffix_key = "__tn__=R-R"
+
+    def extract_comments(self, user, content, comments_queue):
+        post_comments, comments_ids = [], set()
+        i = 0
+        while i < len(comments_queue):
+            comment_data = comments_queue[i]["node"]
+            self.fetch_additional_comments(comment_data, comments_queue)
+            doc = self.parse_comment_data(comment_data)
+            if doc["id"] and doc["id"] in comments_ids:
+                i += 1
+                continue
+            if not doc["id"]:
+                raise exception.StopExtraction(
+                    "This post does not have comments or is not accessible."
+                )
+            i = 0
+            comments_ids.add(doc["id"])
+            comment_data = self.reload_comment([doc["id"]], comments_queue)# must be reloaded to have inner edges
+            inner_comments = comment_data["feedback"]["replies_connection"]["edges"]
+            doc["replies"] = self._process_nested_replies([doc["id"]], inner_comments, comments_ids, comments_queue)
+            # if comment_data.get("feedback", {}).get("replies_fields", {}).get("count", 0):
+            #     doc["replies"] = []
+            #     i = 0
+            #     inner_comments = [x["node"]["feedback"]["replies_connection"]["edges"] for x in comments_queue if x["node"]["legacy_fbid"] == doc["id"]][0] # must be reloaded to have edges
+            #     for j, ic in enumerate(inner_comments):
+            #         ic = ic["node"]
+            #         self.fetch_additional_comments(ic, comments_queue)
+            #         inner_doc = self.parse_comment_data(ic)
+            #         if inner_doc["id"] and inner_doc["id"] not in comments_ids:
+            #             comments_ids.add(inner_doc["id"])
+            #         if not inner_doc["id"]:
+            #             raise exception.StopExtraction(
+            #                 "This post does not have comments or is not accessible."
+            #             )
+            #         if ic.get("feedback", {}).get("replies_fields", {}).get("count", 0):
+            #             inner_doc["replies"] = []
+            #             i = 0
+            #             inner_inner_comments = [x["node"]["feedback"]["replies_connection"]["edges"] for x in comments_queue if x["node"]["legacy_fbid"] == doc["id"]][0][j]["node"]["feedback"]["replies_connection"]["edges"]
+            #             for iic in inner_inner_comments:
+            #                 iic = iic["node"]
+            #                 inner_inner_doc = self.parse_comment_data(iic)
+            #                 if inner_inner_doc["id"] and inner_inner_doc["id"] not in comments_ids:
+            #                     comments_ids.add(inner_inner_doc["id"])
+            #                 if not inner_inner_doc["id"]:
+            #                     raise exception.StopExtraction(
+            #                         "This post does not have comments or is not accessible."
+            #                     )
+            #                 inner_doc["replies"].append(inner_inner_doc)
+            #         doc["replies"].append(inner_doc)
+            post_comments.append(doc)
+            i += 1
+        yield Message.Post, {"user": user, "content": content, "comments": post_comments}
+    
+    def fetch_additional_comments(self, comment_data, comments_queue):
+        if not comment_data.get("feedback", {}).get("url", ""):
+            return
+        tmp = self.request(
+                f'{comment_data["feedback"]["url"]}&{self.expansion_key}{comment_data["feedback"]["expansion_info"]["expansion_token"]}&{self.suffix_key}'
+            ).text
+        new_comments = [x for x in json.loads(text.extr(tmp, '"comment_list_renderer":', ',"comet_ufi'))["feedback"]["comment_rendering_instance_for_feed_location"]["comments"]["edges"]]
+        combined_comments = new_comments + comments_queue
+        seen_comments = set()
+        res = []
+        for item in combined_comments:
+            if item["node"]["legacy_fbid"] not in seen_comments:
+                seen_comments.add(item["node"]["legacy_fbid"])
+                res.append(item)
+        comments_queue.clear()
+        comments_queue.extend(res)
+
+    def parse_comment_data(self, comment_data):
+        from datetime import datetime
+        c_user = comment_data.get("user", {}).get("name", "")
+        c_text = (comment_data.get("body") or {}).get("text", "") # body can be None if comment is empty (photo exc...)
+        c_time = datetime.utcfromtimestamp(comment_data.get('created_time'))
+        c_url = comment_data.get("feedback", {}).get("url", "")
+        c_id = comment_data.get("legacy_fbid", "")
+        return {
+            "user": c_user,
+            "text": c_text,
+            "time": c_time,
+            "url": c_url,
+            "id": c_id
+        }
+    
+    def reload_comment(self, path_ids, comments_queue):
+        parent_id = path_ids.pop(0)
+        comment = [x["node"] for x in comments_queue if x["node"]["legacy_fbid"] == parent_id][0]
+        while path_ids:
+            path_id = path_ids.pop(0)
+            comment = [x["node"] for x in comment["feedback"]["replies_connection"]["edges"] if x["node"]["legacy_fbid"] == path_id][0]
+        return comment
+
+    def _process_nested_replies(self, parent_ids, inner_comments, comments_ids, comments_queue):
+        replies = []
+        for ic in inner_comments:
+            ic_data = ic["node"]
+            self.fetch_additional_comments(ic_data, comments_queue)
+            inner_doc = self.parse_comment_data(ic_data)
+            if inner_doc["id"] and inner_doc["id"] not in comments_ids:
+                comments_ids.add(inner_doc["id"])
+            if not inner_doc["id"]:
+                raise exception.StopExtraction(
+                    "This post does not have comments or is not accessible."
+                )
+            ic_data = self.reload_comment(parent_ids + [inner_doc["id"]], comments_queue)
+            if ic_data.get("feedback", {}).get("replies_connection"):  # must be reloaded to have inner edges
+                inner_inner_comments = ic_data["feedback"]["replies_connection"]["edges"]
+                inner_doc["replies"] = self._process_nested_replies(parent_ids + [inner_doc["id"]], inner_inner_comments, comments_ids, comments_queue)
+            else:
+                inner_doc["replies"] = []
+            replies.append(inner_doc)
+        return replies
+
+    def items(self):
+        post_page = self.request(self.url).text
+        post_metadata = json.loads(text.extr(post_page, '"content":', ',"layout'))["story"]
+        user = post_metadata["actors"][0]["name"]
+        content = post_metadata["comet_sections"]["message_container"]["story"]["message"]["text"]
+        try:
+            comments = json.loads(text.extr(post_page, '"comment_list_renderer":', ',"comet_ufi'))["feedback"]["comment_rendering_instance_for_feed_location"]["comments"]["edges"]
+        except KeyError:
+            raise exception.StopExtraction(
+                "This post does not have comments or is not accessible."
+            )
+        except json.JSONDecodeError:
+            raise exception.StopExtraction(
+                "Failed to parse comments from the post page."
+            )
+        return self.extract_comments(user, content, comments)
+
+
