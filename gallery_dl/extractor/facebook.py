@@ -524,7 +524,7 @@ class FacebookCommentExtractor(FacebookExtractor):
             #         doc["replies"].append(inner_doc)
             post_comments.append(doc)
             i += 1
-        yield Message.Post, {"user": user, "content": content, "comments": post_comments}
+        yield Message.Directory, {"user": user, "content": content, "comments": post_comments}
     
     def fetch_additional_comments(self, comment_data, comments_queue):
         if not comment_data.get("feedback", {}).get("url", ""):

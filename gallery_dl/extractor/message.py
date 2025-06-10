@@ -53,4 +53,3 @@ class Message():
     Queue = 6
     #  Urllist = 7
     #  Metadata = 8
-    Post = 9
