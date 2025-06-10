@@ -524,6 +524,8 @@ class FacebookCommentExtractor(FacebookExtractor):
             #         doc["replies"].append(inner_doc)
             post_comments.append(doc)
             i += 1
+            if len(post_comments) >= self.config("comments-limit", 100):
+                break
         yield Message.Directory, {"user": user, "content": content, "comments": post_comments}
     
     def fetch_additional_comments(self, comment_data, comments_queue):
