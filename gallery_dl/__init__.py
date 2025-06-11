@@ -59,6 +59,8 @@ def main():
             config.set((), "skip", "abort:" + str(args.abort))
         if args.terminate:
             config.set((), "skip", "terminate:" + str(args.terminate))
+        if args.comments_limit is not None:
+            config.set((), "comments-limit", args.comments_limit)
         if args.cookies_from_browser:
             browser, _, profile = args.cookies_from_browser.partition(":")
             browser, _, keyring = browser.partition("+")

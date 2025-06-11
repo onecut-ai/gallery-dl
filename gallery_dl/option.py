@@ -658,6 +658,11 @@ def build_parser():
               "These can be either a constant value, range, or slice "
               "(e.g. '5', '8-20', or '1:24:3')"),
     )
+    output.add_argument(
+        "--comments-limit",
+        dest="comments_limit", metavar="N_COMMENTS", type=int,
+        help="Limit the number of comments to download per post/item",
+    )
     selection.add_argument(
         "--chapter-range",
         dest="chapter-range", metavar="RANGE", action=ConfigAction,
