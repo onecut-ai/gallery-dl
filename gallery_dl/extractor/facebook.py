@@ -7,8 +7,12 @@
 """Extractors for https://www.facebook.com/"""
 
 import json
+import asyncio
+from time import time
+from concurrent.futures import ThreadPoolExecutor
 from .common import Extractor, Message
 from .. import text, exception
+from loguru import logger as log
 
 BASE_PATTERN = r"(?:https?://)?(?:[\w-]+\.)?facebook\.com"
 
@@ -475,9 +479,43 @@ class FacebookCommentExtractor(FacebookExtractor):
     suffix_key = "__tn__=R-R"
 
     def extract_comments(self, user, content, comments_queue):
+        # Check if we're using proxies to decide between async and sync processing
+        use_async = self._should_use_async_processing()
+
+        if use_async:
+            # Use async processing with asyncio.gather
+            return self._extract_comments_async(user, content, comments_queue)
+        else:
+            # Use synchronous processing (original method)
+            return self._extract_comments_sync(user, content, comments_queue)
+
+    def _should_use_async_processing(self):
+        """Determine if we should use async processing based on proxy configuration"""
+        # Check if proxies are configured
+        proxies = self._proxies
+        proxy_enabled = proxies and any(proxies.values())
+
+        # Check if parallel comments is explicitly enabled
+        parallel_enabled = self.config("parallel-comments", False)
+
+        use_async = proxy_enabled or parallel_enabled
+
+        log.info(
+            f"Async processing decision: proxies={proxy_enabled}, parallel_comments={parallel_enabled}, use_async={use_async}"
+        )
+        if proxy_enabled:
+            log.debug(f"Proxies configured: {proxies}")
+
+        return use_async
+
+    def _extract_comments_sync(self, user, content, comments_queue):
+        """Synchronous comment extraction (original implementation)"""
         post_comments, comments_ids = [], set()
+        comments_limit = self.config("comments-limit", 10)
         i = 0
+
         while i < len(comments_queue):
+            start = time()
             comment_data = comments_queue[i]["node"]
             self.fetch_additional_comments(comment_data, comments_queue)
             doc = self.parse_comment_data(comment_data)
@@ -488,46 +526,199 @@ class FacebookCommentExtractor(FacebookExtractor):
                 raise exception.StopExtraction(
                     "This post does not have comments or is not accessible."
                 )
-            i = 0
             comments_ids.add(doc["id"])
             comment_data = self.reload_comment([doc["id"]], comments_queue)# must be reloaded to have inner edges
             inner_comments = comment_data["feedback"]["replies_connection"]["edges"]
-            doc["replies"] = self._process_nested_replies([doc["id"]], inner_comments, comments_ids, comments_queue)
-            # if comment_data.get("feedback", {}).get("replies_fields", {}).get("count", 0):
-            #     doc["replies"] = []
-            #     i = 0
-            #     inner_comments = [x["node"]["feedback"]["replies_connection"]["edges"] for x in comments_queue if x["node"]["legacy_fbid"] == doc["id"]][0] # must be reloaded to have edges
-            #     for j, ic in enumerate(inner_comments):
-            #         ic = ic["node"]
-            #         self.fetch_additional_comments(ic, comments_queue)
-            #         inner_doc = self.parse_comment_data(ic)
-            #         if inner_doc["id"] and inner_doc["id"] not in comments_ids:
-            #             comments_ids.add(inner_doc["id"])
-            #         if not inner_doc["id"]:
-            #             raise exception.StopExtraction(
-            #                 "This post does not have comments or is not accessible."
-            #             )
-            #         if ic.get("feedback", {}).get("replies_fields", {}).get("count", 0):
-            #             inner_doc["replies"] = []
-            #             i = 0
-            #             inner_inner_comments = [x["node"]["feedback"]["replies_connection"]["edges"] for x in comments_queue if x["node"]["legacy_fbid"] == doc["id"]][0][j]["node"]["feedback"]["replies_connection"]["edges"]
-            #             for iic in inner_inner_comments:
-            #                 iic = iic["node"]
-            #                 inner_inner_doc = self.parse_comment_data(iic)
-            #                 if inner_inner_doc["id"] and inner_inner_doc["id"] not in comments_ids:
-            #                     comments_ids.add(inner_inner_doc["id"])
-            #                 if not inner_inner_doc["id"]:
-            #                     raise exception.StopExtraction(
-            #                         "This post does not have comments or is not accessible."
-            #                     )
-            #                 inner_doc["replies"].append(inner_inner_doc)
-            #         doc["replies"].append(inner_doc)
+            doc["replies"] = self._process_nested_replies(
+                [doc["id"]], inner_comments, comments_ids, comments_queue
+            )
             post_comments.append(doc)
-            i += 1
-            if len(post_comments) >= self.config("comments-limit", 10):
+            i = 0
+            log.debug(
+                f"Processed comment {len(post_comments)}: {doc['id']} in {time() - start:.2f} seconds"
+            )
+            if len(post_comments) >= comments_limit:
                 break
+
         yield Message.Directory, {"user": user, "content": content, "comments": post_comments}
-    
+
+    def _extract_comments_async(self, user, content, comments_queue):
+        """Asynchronous comment extraction using asyncio.gather"""
+        log.info("Starting async comment extraction")
+
+        # Run the async extraction in the event loop
+        try:
+            # Try to get the current running loop
+            loop = asyncio.get_running_loop()
+            log.debug("Already in an event loop, running in thread pool")
+            # If we're already in a loop, we need to run in a new thread
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run, self._async_process_comments(comments_queue)
+                )
+                post_comments = future.result()
+        except RuntimeError:
+            # No running loop, safe to create and run
+            log.debug("No event loop found, creating new one")
+            post_comments = asyncio.run(self._async_process_comments(comments_queue))
+
+        log.info(
+            f"Async comment extraction completed, processed {len(post_comments)} comments"
+        )
+        yield Message.Directory, {
+            "user": user,
+            "content": content,
+            "comments": post_comments,
+        }
+
+    async def _async_process_comments(self, comments_queue):
+        """Process comments asynchronously with dynamic queue growth"""
+        log.info(f"Starting async processing of {len(comments_queue)} comments")
+        post_comments, comments_ids = [], set()
+        comments_limit = self.config("comments-limit", 10)
+        max_workers = self.config("max-workers", 10)
+        processed_indices = set()
+
+        log.debug(f"Config: comments_limit={comments_limit}, max_workers={max_workers}")
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            iteration = 0
+            while len(post_comments) < comments_limit:
+                start = time()
+                iteration += 1
+                current_queue_size = len(comments_queue)
+                log.debug(
+                    f"Iteration {iteration}: queue_size={current_queue_size}, processed={len(processed_indices)}, results={len(post_comments)}"
+                )
+
+                # Create tasks for unprocessed comments
+                tasks = []
+                for i in range(current_queue_size):
+                    comment_data = comments_queue[i]["node"]
+                    if (
+                        comment_data["legacy_fbid"] not in comments_ids
+                        and len(post_comments) + len(tasks) < comments_limit
+                    ):
+                        task = asyncio.create_task(
+                            self._async_process_single_comment(
+                                executor, comment_data, comments_queue, comments_ids, i
+                            )
+                        )
+                        tasks.append((task, i))
+
+                if not tasks:
+                    log.debug("No more tasks to process, breaking")
+                    break
+
+                log.debug(f"Created {len(tasks)} tasks for processing")
+
+                # Wait for all tasks to complete
+                results = await asyncio.gather(
+                    *[task for task, _ in tasks], return_exceptions=True
+                )
+
+                log.debug(f"Completed {len(results)} tasks")
+
+                # Process results
+                successful_results = 0
+                for (task, i), result in zip(tasks, results):
+                    processed_indices.add(i)
+
+                    if isinstance(result, Exception):
+                        log.warning(f"Failed to process comment {i}: {result}")
+                        continue
+
+                    if result and result["id"] and result["id"] not in comments_ids:
+                        reply_count = self.count_replies(result)
+                        post_comments.append(result)
+                        comments_ids.add(result["id"])
+                        successful_results += 1
+                        if reply_count > 0:
+                            log.debug(f"Comment {result['id']} has {reply_count} total replies")
+
+                log.info(
+                    f"Iteration {iteration} complete in {time() - start:.2f}: {successful_results} new comments processed, total: {len(post_comments)}"
+                )
+
+                # Check if queue has grown (new comments were fetched)
+                if (
+                    len(post_comments) == current_queue_size
+                    and len(comments_queue) == current_queue_size
+                ):
+                    # No new comments, break the loop
+                    log.debug("Queue size unchanged, no new comments fetched")
+                    break
+
+        log.info(f"Async processing complete: {len(post_comments)} comments processed")
+        return post_comments[:comments_limit]
+
+    async def _async_process_single_comment(
+        self, executor, comment_data, comments_queue, comments_ids, index
+    ):
+        """Process a single comment asynchronously"""
+        # start_time = time()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Fallback for older Python versions
+            loop = asyncio.get_event_loop()
+
+        try:
+            # log.debug(f"Starting to process comment {index}")
+
+            # Fetch additional comments in thread pool to avoid blocking
+            await loop.run_in_executor(
+                executor, self.fetch_additional_comments, comment_data, comments_queue
+            )
+
+            # Parse comment data
+            doc = await loop.run_in_executor(
+                executor, self.parse_comment_data, comment_data
+            )
+
+            if not doc["id"]:
+                log.debug(f"Comment {index} has no ID, skipping")
+                return None
+
+            if doc["id"] in comments_ids:
+                log.debug(f"Comment {index} ({doc['id']}) already processed, skipping")
+                return None
+
+            # Reload comment to get inner edges
+            comment_data_reloaded = await loop.run_in_executor(
+                executor, self.reload_comment, [doc["id"]], comments_queue
+            )
+
+            # Process nested replies asynchronously
+            inner_comments = (
+                comment_data_reloaded.get("feedback", {})
+                .get("replies_connection", {})
+                .get("edges", [])
+            )
+            
+            if inner_comments:
+                doc["replies"] = await self._process_nested_replies_async(
+                    executor,
+                    [doc["id"]],
+                    inner_comments,
+                    comments_ids,
+                    comments_queue,
+                )
+            else:
+                doc["replies"] = []
+
+            # processing_time = time() - start_time
+            # log.debug(
+            #     f"Successfully processed comment {index} ({doc['id']}) in {processing_time:.2f}s with {len(doc['replies'])} replies"
+            # )
+            return doc
+
+        except Exception as exc:
+            log.error(f"Error processing comment {index}: {exc}")
+            return None
+
     def fetch_additional_comments(self, comment_data, comments_queue):
         if not comment_data.get("feedback", {}).get("url", ""):
             return
@@ -559,7 +750,7 @@ class FacebookCommentExtractor(FacebookExtractor):
             "url": c_url,
             "id": c_id
         }
-    
+
     def reload_comment(self, path_ids, comments_queue):
         parent_id = path_ids.pop(0)
         comment = [x["node"] for x in comments_queue if x["node"]["legacy_fbid"] == parent_id][0]
@@ -589,6 +780,143 @@ class FacebookCommentExtractor(FacebookExtractor):
             replies.append(inner_doc)
         return replies
 
+    def count_replies(self, doc):
+        """Recursively count the total number of replies in a comment document"""
+        if not doc or not isinstance(doc, dict):
+            return 0
+        
+        replies = doc.get("replies", [])
+        if not replies:
+            return 0
+        
+        # Count direct replies
+        total_replies = len(replies)
+        
+        # Recursively count nested replies
+        for reply in replies:
+            total_replies += self.count_replies(reply)
+        
+        return total_replies
+
+    def get_reply_stats(self, doc):
+        """Get detailed reply statistics for a comment document"""
+        if not doc or not isinstance(doc, dict):
+            return {"direct_replies": 0, "total_replies": 0, "max_depth": 0}
+        
+        replies = doc.get("replies", [])
+        direct_replies = len(replies)
+        
+        if not replies:
+            return {"direct_replies": 0, "total_replies": 0, "max_depth": 0}
+        
+        total_replies = direct_replies
+        max_depth = 1
+        
+        for reply in replies:
+            nested_stats = self.get_reply_stats(reply)
+            total_replies += nested_stats["total_replies"]
+            max_depth = max(max_depth, nested_stats["max_depth"] + 1)
+        
+        return {
+            "direct_replies": direct_replies,
+            "total_replies": total_replies,
+            "max_depth": max_depth
+        }
+
+    async def _process_nested_replies_async(self, executor, parent_ids, inner_comments, comments_ids, comments_queue):
+        """Asynchronously process nested replies"""
+        if not inner_comments:
+            return []
+
+        # Get the current event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+
+        # Create tasks for each reply
+        reply_tasks = []
+        for ic in inner_comments:
+            ic_data = ic.get("node")
+            if not ic_data:
+                continue
+            
+            task = asyncio.create_task(
+                self._async_process_single_reply(
+                    executor, loop, ic_data, parent_ids, comments_ids, comments_queue
+                )
+            )
+            reply_tasks.append(task)
+
+        if not reply_tasks:
+            return []
+
+        # Wait for all reply tasks to complete
+        results = await asyncio.gather(*reply_tasks, return_exceptions=True)
+        
+        # Filter out exceptions and None results
+        replies = []
+        successful_replies = 0
+        failed_replies = 0
+        
+        for result in results:
+            if isinstance(result, Exception):
+                failed_replies += 1
+                log.warning(f"Failed to process nested reply: {result}")
+                continue
+            if result:
+                replies.append(result)
+                successful_replies += 1
+        
+        if failed_replies > 0:
+            log.debug(f"Nested replies: {successful_replies} success, {failed_replies} failed")
+        
+        return replies
+
+    async def _async_process_single_reply(self, executor, loop, ic_data, parent_ids, comments_ids, comments_queue):
+        """Process a single reply asynchronously"""
+        try:
+            # Fetch additional comments for this reply
+            await loop.run_in_executor(
+                executor, self.fetch_additional_comments, ic_data, comments_queue
+            )
+            
+            # Parse the reply data
+            inner_doc = await loop.run_in_executor(
+                executor, self.parse_comment_data, ic_data
+            )
+            
+            if not inner_doc or not inner_doc.get("id"):
+                return None
+                
+            if inner_doc["id"] in comments_ids:
+                return None
+                
+            comments_ids.add(inner_doc["id"])
+            
+            # Reload comment to get inner edges
+            ic_data_reloaded = await loop.run_in_executor(
+                executor, self.reload_comment, parent_ids + [inner_doc["id"]], comments_queue
+            )
+            
+            # Check if there are nested replies
+            if (ic_data_reloaded and 
+                ic_data_reloaded.get("feedback", {}).get("replies_connection", {}).get("edges")):
+                inner_inner_comments = ic_data_reloaded["feedback"]["replies_connection"]["edges"]
+                
+                # Recursively process nested replies asynchronously
+                inner_doc["replies"] = await self._process_nested_replies_async(
+                    executor, parent_ids + [inner_doc["id"]], inner_inner_comments, comments_ids, comments_queue
+                )
+            else:
+                inner_doc["replies"] = []
+            
+            return inner_doc
+            
+        except Exception as exc:
+            log.warning(f"Error processing single reply: {exc}")
+            return None
+
     def items(self):
         post_page = self.request(self.url).text
         post_metadata = json.loads(text.extr(post_page, '"content":', ',"layout'))["story"]
@@ -605,5 +933,3 @@ class FacebookCommentExtractor(FacebookExtractor):
                 "Failed to parse comments from the post page."
             )
         return self.extract_comments(user, content, comments)
-
-
