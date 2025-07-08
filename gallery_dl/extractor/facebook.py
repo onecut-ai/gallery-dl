@@ -618,7 +618,6 @@ class FacebookCommentExtractor(FacebookExtractor):
                 results = await asyncio.gather(
                     *[task for task, _ in tasks], return_exceptions=True
                 )
-
                 log.debug(f"Completed {len(results)} tasks")
 
                 # Process results
@@ -717,6 +716,7 @@ class FacebookCommentExtractor(FacebookExtractor):
 
         except Exception as exc:
             log.error(f"Error processing comment {index}: {exc}")
+            del comments_queue[index]  # Remove the comment from the queue
             return None
 
     def fetch_additional_comments(self, comment_data, comments_queue):
