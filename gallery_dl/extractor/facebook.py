@@ -478,16 +478,18 @@ class FacebookCommentExtractor(FacebookExtractor):
     expansion_key = "__cft__[1]="
     suffix_key = "__tn__=R-R"
 
-    def extract_comments(self, user, content, comments_queue):
+    def extract_comments(self, user, content, comments_queue, timestamp):
         # Check if we're using proxies to decide between async and sync processing
         use_async = self._should_use_async_processing()
 
         if use_async:
             # Use async processing with asyncio.gather
-            return self._extract_comments_async(user, content, comments_queue)
+            return self._extract_comments_async(
+                user, content, comments_queue, timestamp
+            )
         else:
             # Use synchronous processing (original method)
-            return self._extract_comments_sync(user, content, comments_queue)
+            return self._extract_comments_sync(user, content, comments_queue, timestamp)
 
     def _should_use_async_processing(self):
         """Determine if we should use async processing based on proxy configuration"""
@@ -508,7 +510,7 @@ class FacebookCommentExtractor(FacebookExtractor):
 
         return use_async
 
-    def _extract_comments_sync(self, user, content, comments_queue):
+    def _extract_comments_sync(self, user, content, comments_queue, timestamp):
         """Synchronous comment extraction (original implementation)"""
         post_comments, comments_ids = [], set()
         comments_limit = self.config("comments-limit", 10)
@@ -540,9 +542,14 @@ class FacebookCommentExtractor(FacebookExtractor):
             if len(post_comments) >= comments_limit:
                 break
 
-        yield Message.Directory, {"user": user, "content": content, "comments": post_comments}
+        yield Message.Directory, {
+            "user": user,
+            "content": content,
+            "comments": post_comments,
+            "timestamp": timestamp,
+        }
 
-    def _extract_comments_async(self, user, content, comments_queue):
+    def _extract_comments_async(self, user, content, comments_queue, timestamp):
         """Asynchronous comment extraction using asyncio.gather"""
         log.info("Starting async comment extraction")
 
@@ -571,6 +578,7 @@ class FacebookCommentExtractor(FacebookExtractor):
             "user": user,
             "content": content,
             "comments": post_comments,
+            "timestamp": timestamp,
         }
 
     async def _async_process_comments(self, comments_queue):
@@ -696,7 +704,7 @@ class FacebookCommentExtractor(FacebookExtractor):
                 .get("replies_connection", {})
                 .get("edges", [])
             )
-            
+
             if inner_comments:
                 doc["replies"] = await self._process_nested_replies_async(
                     executor,
@@ -784,39 +792,39 @@ class FacebookCommentExtractor(FacebookExtractor):
         """Recursively count the total number of replies in a comment document"""
         if not doc or not isinstance(doc, dict):
             return 0
-        
+
         replies = doc.get("replies", [])
         if not replies:
             return 0
-        
+
         # Count direct replies
         total_replies = len(replies)
-        
+
         # Recursively count nested replies
         for reply in replies:
             total_replies += self.count_replies(reply)
-        
+
         return total_replies
 
     def get_reply_stats(self, doc):
         """Get detailed reply statistics for a comment document"""
         if not doc or not isinstance(doc, dict):
             return {"direct_replies": 0, "total_replies": 0, "max_depth": 0}
-        
+
         replies = doc.get("replies", [])
         direct_replies = len(replies)
-        
+
         if not replies:
             return {"direct_replies": 0, "total_replies": 0, "max_depth": 0}
-        
+
         total_replies = direct_replies
         max_depth = 1
-        
+
         for reply in replies:
             nested_stats = self.get_reply_stats(reply)
             total_replies += nested_stats["total_replies"]
             max_depth = max(max_depth, nested_stats["max_depth"] + 1)
-        
+
         return {
             "direct_replies": direct_replies,
             "total_replies": total_replies,
@@ -840,7 +848,7 @@ class FacebookCommentExtractor(FacebookExtractor):
             ic_data = ic.get("node")
             if not ic_data:
                 continue
-            
+
             task = asyncio.create_task(
                 self._async_process_single_reply(
                     executor, loop, ic_data, parent_ids, comments_ids, comments_queue
@@ -853,12 +861,12 @@ class FacebookCommentExtractor(FacebookExtractor):
 
         # Wait for all reply tasks to complete
         results = await asyncio.gather(*reply_tasks, return_exceptions=True)
-        
+
         # Filter out exceptions and None results
         replies = []
         successful_replies = 0
         failed_replies = 0
-        
+
         for result in results:
             if isinstance(result, Exception):
                 failed_replies += 1
@@ -867,10 +875,10 @@ class FacebookCommentExtractor(FacebookExtractor):
             if result:
                 replies.append(result)
                 successful_replies += 1
-        
+
         if failed_replies > 0:
             log.debug(f"Nested replies: {successful_replies} success, {failed_replies} failed")
-        
+
         return replies
 
     async def _async_process_single_reply(self, executor, loop, ic_data, parent_ids, comments_ids, comments_queue):
@@ -880,39 +888,39 @@ class FacebookCommentExtractor(FacebookExtractor):
             await loop.run_in_executor(
                 executor, self.fetch_additional_comments, ic_data, comments_queue
             )
-            
+
             # Parse the reply data
             inner_doc = await loop.run_in_executor(
                 executor, self.parse_comment_data, ic_data
             )
-            
+
             if not inner_doc or not inner_doc.get("id"):
                 return None
-                
+
             if inner_doc["id"] in comments_ids:
                 return None
-                
+
             comments_ids.add(inner_doc["id"])
-            
+
             # Reload comment to get inner edges
             ic_data_reloaded = await loop.run_in_executor(
                 executor, self.reload_comment, parent_ids + [inner_doc["id"]], comments_queue
             )
-            
+
             # Check if there are nested replies
             if (ic_data_reloaded and 
                 ic_data_reloaded.get("feedback", {}).get("replies_connection", {}).get("edges")):
                 inner_inner_comments = ic_data_reloaded["feedback"]["replies_connection"]["edges"]
-                
+
                 # Recursively process nested replies asynchronously
                 inner_doc["replies"] = await self._process_nested_replies_async(
                     executor, parent_ids + [inner_doc["id"]], inner_inner_comments, comments_ids, comments_queue
                 )
             else:
                 inner_doc["replies"] = []
-            
+
             return inner_doc
-            
+
         except Exception as exc:
             log.warning(f"Error processing single reply: {exc}")
             return None
@@ -921,6 +929,19 @@ class FacebookCommentExtractor(FacebookExtractor):
         post_page = self.request(self.url).text
         post_metadata = json.loads(text.extr(post_page, '"content":', ',"layout'))["story"]
         user = post_metadata["actors"][0]["name"]
+
+        # Extract and format timestamp
+        timestamp_raw = [
+            x
+            for x in json.loads(text.extr(post_page, '"context_layout":', ',"aymt'))[
+                "story"
+            ]["comet_sections"]["metadata"]
+            if "timestamp" in x["__typename"].lower()
+        ][0]["story"]["creation_time"]
+        from datetime import datetime
+
+        timestamp = datetime.utcfromtimestamp(timestamp_raw)
+
         content = post_metadata["comet_sections"]["message_container"]["story"]["message"]["text"]
         try:
             comments = json.loads(text.extr(post_page, '"comment_list_renderer":', ',"comet_ufi'))["feedback"]["comment_rendering_instance_for_feed_location"]["comments"]["edges"]
@@ -932,4 +953,4 @@ class FacebookCommentExtractor(FacebookExtractor):
             raise exception.StopExtraction(
                 "Failed to parse comments from the post page."
             )
-        return self.extract_comments(user, content, comments)
+        return self.extract_comments(user, content, comments, timestamp)
