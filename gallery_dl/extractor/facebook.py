@@ -478,18 +478,18 @@ class FacebookCommentExtractor(FacebookExtractor):
     expansion_key = "__cft__[1]="
     suffix_key = "__tn__=R-R"
 
-    def extract_comments(self, user, content, comments_queue, timestamp):
+    def extract_comments(self, user_name, user_id, content, comments_queue, timestamp):
         # Check if we're using proxies to decide between async and sync processing
         use_async = self._should_use_async_processing()
 
         if use_async:
             # Use async processing with asyncio.gather
             return self._extract_comments_async(
-                user, content, comments_queue, timestamp
+                user_name, user_id, content, comments_queue, timestamp
             )
         else:
             # Use synchronous processing (original method)
-            return self._extract_comments_sync(user, content, comments_queue, timestamp)
+            return self._extract_comments_sync(user_name, user_id, content, comments_queue, timestamp)
 
     def _should_use_async_processing(self):
         """Determine if we should use async processing based on proxy configuration"""
@@ -510,7 +510,7 @@ class FacebookCommentExtractor(FacebookExtractor):
 
         return use_async
 
-    def _extract_comments_sync(self, user, content, comments_queue, timestamp):
+    def _extract_comments_sync(self, user_name, user_id, content, comments_queue, timestamp):
         """Synchronous comment extraction (original implementation)"""
         post_comments, comments_ids = [], set()
         comments_limit = self.config("comments-limit", 10)
@@ -543,13 +543,14 @@ class FacebookCommentExtractor(FacebookExtractor):
                 break
 
         yield Message.Directory, {
-            "user": user,
+            "user_name": user_name,
+            "user_id": user_id,
             "content": content,
             "comments": post_comments,
             "timestamp": timestamp,
         }
 
-    def _extract_comments_async(self, user, content, comments_queue, timestamp):
+    def _extract_comments_async(self, user_name, user_id, content, comments_queue, timestamp):
         """Asynchronous comment extraction using asyncio.gather"""
         log.info("Starting async comment extraction")
 
@@ -575,7 +576,8 @@ class FacebookCommentExtractor(FacebookExtractor):
             f"Async comment extraction completed, processed {len(post_comments)} comments"
         )
         yield Message.Directory, {
-            "user": user,
+            "user_name": user_name,
+            "user_id": user_id,
             "content": content,
             "comments": post_comments,
             "timestamp": timestamp,
@@ -746,13 +748,15 @@ class FacebookCommentExtractor(FacebookExtractor):
 
     def parse_comment_data(self, comment_data):
         from datetime import datetime
-        c_user = comment_data.get("user", {}).get("name", "")
+        c_user_name = comment_data.get("user", {}).get("name", "")
+        c_user_id = comment_data.get("user", {}).get("id", "")
         c_text = (comment_data.get("body") or {}).get("text", "") # body can be None if comment is empty (photo exc...)
         c_time = datetime.utcfromtimestamp(comment_data.get('created_time'))
         c_url = comment_data.get("feedback", {}).get("url", "")
         c_id = comment_data.get("legacy_fbid", "")
         return {
-            "user": c_user,
+            "user_name": c_user_name,
+            "user_id": c_user_id,
             "text": c_text,
             "time": c_time,
             "url": c_url,
@@ -928,7 +932,9 @@ class FacebookCommentExtractor(FacebookExtractor):
     def items(self):
         post_page = self.request(self.url).text
         post_metadata = json.loads(text.extr(post_page, '"content":', ',"layout'))["story"]
-        user = post_metadata["actors"][0]["name"]
+        group_id = post_metadata["target_group"]["id"]
+        user_name = post_metadata["actors"][0]["name"]
+        user_id = json.loads(json.loads(text.extr(post_page, '"call_to_action":', ',"post_inform_treatment'))["story"]["tracking"])["page_insights"][group_id]["actor_id"]
 
         # Extract and format timestamp
         timestamp_raw = [
@@ -953,4 +959,4 @@ class FacebookCommentExtractor(FacebookExtractor):
             raise exception.StopExtraction(
                 "Failed to parse comments from the post page."
             )
-        return self.extract_comments(user, content, comments, timestamp)
+        return self.extract_comments(user_name, user_id, content, comments, timestamp)
