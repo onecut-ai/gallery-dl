@@ -526,14 +526,14 @@ class FacebookCommentExtractor(FacebookExtractor):
             )
             if len(post_comments) >= comments_limit:
                 break
-
-        yield Message.Directory, user_info.update(
+        user_info.update(
             {
                 "content": content,
                 "comments": post_comments,
                 "timestamp": timestamp,
             }
         )
+        yield Message.Directory, user_info
 
     def _extract_comments_async(self, user_info, content, comments_queue, timestamp):
         """Asynchronous comment extraction using asyncio.gather"""
@@ -560,13 +560,14 @@ class FacebookCommentExtractor(FacebookExtractor):
         log.info(
             f"Async comment extraction completed, processed {len(post_comments)} comments"
         )
-        yield Message.Directory, user_info.update(
+        user_info.update(
             {
                 "content": content,
                 "comments": post_comments,
                 "timestamp": timestamp,
             }
         )
+        yield Message.Directory, user_info
 
     async def _async_process_comments(self, comments_queue):
         """Process comments asynchronously with dynamic queue growth"""
