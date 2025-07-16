@@ -19,6 +19,7 @@ BASE_PATTERN = r"(?:https?://)?(?:[\w-]+\.)?facebook\.com"
 
 class FacebookExtractor(Extractor):
     """Base class for Facebook extractors"""
+
     category = "facebook"
     root = "https://www.facebook.com"
     directory_fmt = ("{category}", "{username}", "{title} ({set_id})")
@@ -45,39 +46,31 @@ class FacebookExtractor(Extractor):
     @staticmethod
     def decode_all(txt):
         return text.unescape(
-            txt.encode().decode("unicode_escape")
-            .encode("utf_16", "surrogatepass").decode("utf_16")
+            txt.encode()
+            .decode("unicode_escape")
+            .encode("utf_16", "surrogatepass")
+            .decode("utf_16")
         ).replace("\\/", "/")
 
     @staticmethod
     def parse_set_page(set_page):
         directory = {
-            "set_id": text.extr(
-                set_page, '"mediaSetToken":"', '"'
-            ) or text.extr(
-                set_page, '"mediasetToken":"', '"'
-            ),
+            "set_id": text.extr(set_page, '"mediaSetToken":"', '"')
+            or text.extr(set_page, '"mediasetToken":"', '"'),
             "username": FacebookExtractor.decode_all(
-                text.extr(
-                    set_page, '"user":{"__isProfile":"User","name":"', '","'
-                ) or text.extr(
-                    set_page, '"actors":[{"__typename":"User","name":"', '","'
-                )
+                text.extr(set_page, '"user":{"__isProfile":"User","name":"', '","')
+                or text.extr(set_page, '"actors":[{"__typename":"User","name":"', '","')
             ),
-            "user_id": text.extr(
-                set_page, '"owner":{"__typename":"User","id":"', '"'
+            "user_id": text.extr(set_page, '"owner":{"__typename":"User","id":"', '"'),
+            "title": FacebookExtractor.decode_all(
+                text.extr(set_page, '"title":{"text":"', '"')
             ),
-            "title": FacebookExtractor.decode_all(text.extr(
-                set_page, '"title":{"text":"', '"'
-            )),
             "first_photo_id": text.extr(
                 set_page,
                 '{"__typename":"Photo","__isMedia":"Photo","',
-                '","creation_story"'
-            ).rsplit('"id":"', 1)[-1] or
-            text.extr(
-                set_page, '{"__typename":"Photo","id":"', '"'
-            )
+                '","creation_story"',
+            ).rsplit('"id":"', 1)[-1]
+            or text.extr(set_page, '{"__typename":"Photo","id":"', '"'),
         }
 
         return directory
@@ -85,41 +78,38 @@ class FacebookExtractor(Extractor):
     @staticmethod
     def parse_photo_page(photo_page):
         photo = {
-            "id": text.extr(
-                photo_page, '"__isNode":"Photo","id":"', '"'
-            ),
+            "id": text.extr(photo_page, '"__isNode":"Photo","id":"', '"'),
             "set_id": text.extr(
-                photo_page,
-                '"url":"https:\\/\\/www.facebook.com\\/photo\\/?fbid=',
-                '"'
+                photo_page, '"url":"https:\\/\\/www.facebook.com\\/photo\\/?fbid=', '"'
             ).rsplit("&set=", 1)[-1],
-            "username": FacebookExtractor.decode_all(text.extr(
-                photo_page, '"owner":{"__typename":"User","name":"', '"'
-            )),
+            "username": FacebookExtractor.decode_all(
+                text.extr(photo_page, '"owner":{"__typename":"User","name":"', '"')
+            ),
             "user_id": text.extr(
                 photo_page, '"owner":{"__typename":"User","id":"', '"'
             ),
-            "caption": FacebookExtractor.decode_all(text.extr(
-                photo_page,
-                '"message":{"delight_ranges"',
-                '"},"message_preferred_body"'
-            ).rsplit('],"text":"', 1)[-1]),
-            "date": text.parse_timestamp(
-                text.extr(photo_page, '\\"publish_time\\":', ',') or
-                text.extr(photo_page, '"created_time":', ',')
+            "caption": FacebookExtractor.decode_all(
+                text.extr(
+                    photo_page,
+                    '"message":{"delight_ranges"',
+                    '"},"message_preferred_body"',
+                ).rsplit('],"text":"', 1)[-1]
             ),
-            "url": FacebookExtractor.decode_all(text.extr(
-                photo_page, ',"image":{"uri":"', '","'
-            )),
+            "date": text.parse_timestamp(
+                text.extr(photo_page, '\\"publish_time\\":', ",")
+                or text.extr(photo_page, '"created_time":', ",")
+            ),
+            "url": FacebookExtractor.decode_all(
+                text.extr(photo_page, ',"image":{"uri":"', '","')
+            ),
             "next_photo_id": text.extr(
-                photo_page,
-                '"nextMediaAfterNodeId":{"__typename":"Photo","id":"',
-                '"'
-            ) or text.extr(
+                photo_page, '"nextMediaAfterNodeId":{"__typename":"Photo","id":"', '"'
+            )
+            or text.extr(
                 photo_page,
                 '"nextMedia":{"edges":[{"node":{"__typename":"Photo","id":"',
-                '"'
-            )
+                '"',
+            ),
         }
 
         text.nameext_from_url(photo["url"], photo)
@@ -129,13 +119,13 @@ class FacebookExtractor(Extractor):
         for comment_raw in text.extract_iter(
             photo_page, '{"node":{"id"', '"cursor":null}'
         ):
-            if ('"is_author_original_poster":true' in comment_raw and
-                    '{"__typename":"Photo","id":"' in comment_raw):
-                photo["followups_ids"].append(text.extr(
-                    comment_raw,
-                    '{"__typename":"Photo","id":"',
-                    '"'
-                ))
+            if (
+                '"is_author_original_poster":true' in comment_raw
+                and '{"__typename":"Photo","id":"' in comment_raw
+            ):
+                photo["followups_ids"].append(
+                    text.extr(comment_raw, '{"__typename":"Photo","id":"', '"')
+                )
             times.append(
                 text.parse_timestamp(text.extr(comment_raw, '"created_time":', ',"'))
             )
@@ -161,14 +151,14 @@ class FacebookExtractor(Extractor):
     @staticmethod
     def parse_post_page(post_page):
         first_photo_url = text.extr(
-            text.extr(
-                post_page, '"__isMedia":"Photo"', '"target_group"'
-            ), '"url":"', ','
+            text.extr(post_page, '"__isMedia":"Photo"', '"target_group"'),
+            '"url":"',
+            ",",
         )
 
         post = {
-            "set_id": text.extr(post_page, '{"mediaset_token":"', '"') or
-            text.extr(first_photo_url, 'set=', '"').rsplit("&", 1)[0]
+            "set_id": text.extr(post_page, '{"mediaset_token":"', '"')
+            or text.extr(first_photo_url, "set=", '"').rsplit("&", 1)[0]
         }
 
         return post
@@ -176,61 +166,61 @@ class FacebookExtractor(Extractor):
     @staticmethod
     def parse_video_page(video_page):
         video = {
-            "id": text.extr(
-                video_page, '\\"video_id\\":\\"', '\\"'
+            "id": text.extr(video_page, '\\"video_id\\":\\"', '\\"'),
+            "username": FacebookExtractor.decode_all(
+                text.extr(video_page, '"actors":[{"__typename":"User","name":"', '","')
             ),
-            "username": FacebookExtractor.decode_all(text.extr(
-                video_page, '"actors":[{"__typename":"User","name":"', '","'
-            )),
             "user_id": text.extr(
                 video_page, '"owner":{"__typename":"User","id":"', '"'
             ),
-            "date": text.parse_timestamp(text.extr(
-                video_page, '\\"publish_time\\":', ','
-            )),
-            "type": "video"
+            "date": text.parse_timestamp(
+                text.extr(video_page, '\\"publish_time\\":', ",")
+            ),
+            "type": "video",
         }
 
         if not video["username"]:
-            video["username"] = FacebookExtractor.decode_all(text.extr(
-                video_page,
-                '"__typename":"User","id":"' + video["user_id"] + '","name":"',
-                '","'
-            ))
+            video["username"] = FacebookExtractor.decode_all(
+                text.extr(
+                    video_page,
+                    '"__typename":"User","id":"' + video["user_id"] + '","name":"',
+                    '","',
+                )
+            )
 
         first_video_raw = text.extr(
-            video_page, '"permalink_url"', '\\/Period>\\u003C\\/MPD>'
+            video_page, '"permalink_url"', "\\/Period>\\u003C\\/MPD>"
         )
 
         audio = {
             **video,
-            "url": FacebookExtractor.decode_all(text.extr(
+            "url": FacebookExtractor.decode_all(
                 text.extr(
-                    first_video_raw,
-                    "AudioChannelConfiguration",
-                    "BaseURL>\\u003C"
-                ),
-                "BaseURL>", "\\u003C\\/"
-            )),
-            "type": "audio"
+                    text.extr(
+                        first_video_raw, "AudioChannelConfiguration", "BaseURL>\\u003C"
+                    ),
+                    "BaseURL>",
+                    "\\u003C\\/",
+                )
+            ),
+            "type": "audio",
         }
 
         video["urls"] = {}
 
         for raw_url in text.extract_iter(
-            first_video_raw, 'FBQualityLabel=\\"', '\\u003C\\/BaseURL>'
+            first_video_raw, 'FBQualityLabel=\\"', "\\u003C\\/BaseURL>"
         ):
             resolution = raw_url.split('\\"', 1)[0]
             video["urls"][resolution] = FacebookExtractor.decode_all(
-                raw_url.split('BaseURL>', 1)[1]
+                raw_url.split("BaseURL>", 1)[1]
             )
 
         if not video["urls"]:
             return video, audio
 
         video["url"] = max(
-            video["urls"].items(),
-            key=lambda x: text.parse_int(x[0][:-1])
+            video["urls"].items(), key=lambda x: text.parse_int(x[0][:-1])
         )[1]
 
         text.nameext_from_url(video["url"], video)
@@ -240,26 +230,28 @@ class FacebookExtractor(Extractor):
         return video, audio
 
     def photo_page_request_wrapper(self, url, **kwargs):
-        LEFT_OFF_TXT = "" if url.endswith("&set=") else (
-            "\nYou can use this URL to continue from "
-            "where you left off (added \"&setextract\"): "
-            "\n" + url + "&setextract"
+        LEFT_OFF_TXT = (
+            ""
+            if url.endswith("&set=")
+            else (
+                "\nYou can use this URL to continue from "
+                'where you left off (added "&setextract"): '
+                "\n" + url + "&setextract"
+            )
         )
 
         res = self.request(url, **kwargs)
 
         if res.url.startswith(self.root + "/login"):
             raise exception.AuthenticationError(
-                "You must be logged in to continue viewing images." +
-                LEFT_OFF_TXT
+                "You must be logged in to continue viewing images." + LEFT_OFF_TXT
             )
 
         if b'{"__dr":"CometErrorRoot.react"}' in res.content:
             raise exception.StopExtraction(
                 "You've been temporarily blocked from viewing images. "
                 "\nPlease try using a different account, "
-                "using a VPN or waiting before you retry." +
-                LEFT_OFF_TXT
+                "using a VPN or waiting before you retry." + LEFT_OFF_TXT
             )
 
         return res
@@ -273,9 +265,7 @@ class FacebookExtractor(Extractor):
 
         while i < len(all_photo_ids):
             photo_id = all_photo_ids[i]
-            photo_url = self.photo_url_fmt.format(
-                photo_id=photo_id, set_id=set_id
-            )
+            photo_url = self.photo_url_fmt.format(photo_id=photo_id, set_id=set_id)
             photo_page = self.photo_page_request_wrapper(photo_url).text
 
             photo = self.parse_photo_page(photo_page)
@@ -284,9 +274,7 @@ class FacebookExtractor(Extractor):
             if self.author_followups:
                 for followup_id in photo["followups_ids"]:
                     if followup_id not in all_photo_ids:
-                        self.log.debug(
-                            "Found a followup in comments: %s", followup_id
-                        )
+                        self.log.debug("Found a followup in comments: %s", followup_id)
                         all_photo_ids.append(followup_id)
 
             if not photo["url"]:
@@ -294,15 +282,18 @@ class FacebookExtractor(Extractor):
                     seconds = self._interval_429()
                     self.log.warning(
                         "Failed to find photo download URL for %s. "
-                        "Retrying in %s seconds.", photo_url, seconds,
+                        "Retrying in %s seconds.",
+                        photo_url,
+                        seconds,
                     )
                     self.wait(seconds=seconds, reason="429 Too Many Requests")
                     retries += 1
                     continue
                 else:
                     self.log.error(
-                        "Failed to find photo download URL for " + photo_url +
-                        ". Skipping."
+                        "Failed to find photo download URL for "
+                        + photo_url
+                        + ". Skipping."
                     )
                     retries = 0
             else:
@@ -313,8 +304,7 @@ class FacebookExtractor(Extractor):
 
             if not photo["next_photo_id"]:
                 self.log.debug(
-                    "Can't find next image in the set. "
-                    "Extraction is over."
+                    "Can't find next image in the set. " "Extraction is over."
                 )
             elif photo["next_photo_id"] in all_photo_ids:
                 if photo["next_photo_id"] != photo["id"]:
@@ -330,10 +320,10 @@ class FacebookExtractor(Extractor):
 
 class FacebookSetExtractor(FacebookExtractor):
     """Base class for Facebook Set extractors"""
+
     subcategory = "set"
     pattern = (
-        BASE_PATTERN +
-        r"/(?:(?:media/set|photo)/?\?(?:[^&#]+&)*set=([^&#]+)"
+        BASE_PATTERN + r"/(?:(?:media/set|photo)/?\?(?:[^&#]+&)*set=([^&#]+)"
         r"[^/?#]*(?<!&setextract)$"
         r"|([^/?#]+/posts/[^/?#]+)"
         r"|photo/\?(?:[^&#]+&)*fbid=([^/?&#]+)&set=([^/?&#]+)&setextract)"
@@ -359,10 +349,12 @@ class FacebookSetExtractor(FacebookExtractor):
 
 class FacebookPhotoExtractor(FacebookExtractor):
     """Base class for Facebook Photo extractors"""
+
     subcategory = "photo"
-    pattern = (BASE_PATTERN +
-               r"/(?:[^/?#]+/photos/[^/?#]+/|photo(?:.php)?/?\?"
-               r"(?:[^&#]+&)*fbid=)([^/?&#]+)[^/?#]*(?<!&setextract)$")
+    pattern = (
+        BASE_PATTERN + r"/(?:[^/?#]+/photos/[^/?#]+/|photo(?:.php)?/?\?"
+        r"(?:[^&#]+&)*fbid=)([^/?&#]+)[^/?#]*(?<!&setextract)$"
+    )
     example = "https://www.facebook.com/photo/?fbid=PHOTO_ID"
 
     def items(self):
@@ -374,9 +366,7 @@ class FacebookPhotoExtractor(FacebookExtractor):
         photo = self.parse_photo_page(photo_page)
         photo["num"] = i
 
-        set_page = self.request(
-            self.set_url_fmt.format(set_id=photo["set_id"])
-        ).text
+        set_page = self.request(self.set_url_fmt.format(set_id=photo["set_id"])).text
 
         directory = self.parse_set_page(set_page)
 
@@ -387,9 +377,7 @@ class FacebookPhotoExtractor(FacebookExtractor):
             for comment_photo_id in photo["followups_ids"]:
                 comment_photo = self.parse_photo_page(
                     self.photo_page_request_wrapper(
-                        self.photo_url_fmt.format(
-                            photo_id=comment_photo_id, set_id=""
-                        )
+                        self.photo_url_fmt.format(photo_id=comment_photo_id, set_id="")
                     ).text
                 )
                 i += 1
@@ -399,6 +387,7 @@ class FacebookPhotoExtractor(FacebookExtractor):
 
 class FacebookVideoExtractor(FacebookExtractor):
     """Base class for Facebook Video extractors"""
+
     subcategory = "video"
     directory_fmt = ("{category}", "{username}", "{subcategory}")
     pattern = BASE_PATTERN + r"/(?:[^/?#]+/videos/|watch/?\?v=)([^/?&#]+)"
@@ -426,10 +415,10 @@ class FacebookVideoExtractor(FacebookExtractor):
 
 class FacebookProfileExtractor(FacebookExtractor):
     """Base class for Facebook Profile Photos Set extractors"""
+
     subcategory = "profile"
     pattern = (
-        BASE_PATTERN +
-        r"/(?!media/|photo/|photo.php|watch/)"
+        BASE_PATTERN + r"/(?!media/|photo/|photo.php|watch/)"
         r"(?:profile\.php\?id=|people/[^/?#]+/)?"
         r"([^/?&#]+)(?:/photos(?:_by)?|/videos|/posts)?/?(?:$|\?|#)"
     )
@@ -437,22 +426,16 @@ class FacebookProfileExtractor(FacebookExtractor):
 
     @staticmethod
     def get_profile_photos_set_id(profile_photos_page):
-        set_ids_raw = text.extr(
-            profile_photos_page, '"pageItems"', '"page_info"'
-        )
+        set_ids_raw = text.extr(profile_photos_page, '"pageItems"', '"page_info"')
 
-        set_id = text.extr(
-            set_ids_raw, 'set=', '"'
-        ).rsplit("&", 1)[0] or text.extr(
-            set_ids_raw, '\\/photos\\/', '\\/'
+        set_id = text.extr(set_ids_raw, "set=", '"').rsplit("&", 1)[0] or text.extr(
+            set_ids_raw, "\\/photos\\/", "\\/"
         )
 
         return set_id
 
     def items(self):
-        profile_photos_url = (
-            self.root + "/" + self.groups[0] + "/photos_by"
-        )
+        profile_photos_url = self.root + "/" + self.groups[0] + "/photos_by"
         profile_photos_page = self.request(profile_photos_url).text
 
         set_id = self.get_profile_photos_set_id(profile_photos_page)
@@ -469,27 +452,27 @@ class FacebookProfileExtractor(FacebookExtractor):
 
 class FacebookCommentExtractor(FacebookExtractor):
     """Base class for Facebook Profile Photos Set extractors"""
+
     subcategory = "comments"
-    pattern = (
-        BASE_PATTERN +
-        r"/groups/([^/?&#]+)/posts/([^/?&#]+)"
-    )
+    pattern = BASE_PATTERN + r"/groups/([^/?&#]+)/posts/([^/?&#]+)"
     example = "https://www.facebook.com/groups/238620256823178/posts/1693941581291031"
     expansion_key = "__cft__[1]="
     suffix_key = "__tn__=R-R"
 
-    def extract_comments(self, user_name, user_id, content, comments_queue, timestamp):
+    def extract_comments(self, user_info, content, comments_queue, timestamp):
         # Check if we're using proxies to decide between async and sync processing
         use_async = self._should_use_async_processing()
 
         if use_async:
             # Use async processing with asyncio.gather
             return self._extract_comments_async(
-                user_name, user_id, content, comments_queue, timestamp
+                user_info, content, comments_queue, timestamp
             )
         else:
             # Use synchronous processing (original method)
-            return self._extract_comments_sync(user_name, user_id, content, comments_queue, timestamp)
+            return self._extract_comments_sync(
+                user_info, content, comments_queue, timestamp
+            )
 
     def _should_use_async_processing(self):
         """Determine if we should use async processing based on proxy configuration"""
@@ -510,7 +493,7 @@ class FacebookCommentExtractor(FacebookExtractor):
 
         return use_async
 
-    def _extract_comments_sync(self, user_name, user_id, content, comments_queue, timestamp):
+    def _extract_comments_sync(self, user_info, content, comments_queue, timestamp):
         """Synchronous comment extraction (original implementation)"""
         post_comments, comments_ids = [], set()
         comments_limit = self.config("comments-limit", 10)
@@ -529,7 +512,9 @@ class FacebookCommentExtractor(FacebookExtractor):
                     "This post does not have comments or is not accessible."
                 )
             comments_ids.add(doc["id"])
-            comment_data = self.reload_comment([doc["id"]], comments_queue)# must be reloaded to have inner edges
+            comment_data = self.reload_comment(
+                [doc["id"]], comments_queue
+            )  # must be reloaded to have inner edges
             inner_comments = comment_data["feedback"]["replies_connection"]["edges"]
             doc["replies"] = self._process_nested_replies(
                 [doc["id"]], inner_comments, comments_ids, comments_queue
@@ -542,15 +527,15 @@ class FacebookCommentExtractor(FacebookExtractor):
             if len(post_comments) >= comments_limit:
                 break
 
-        yield Message.Directory, {
-            "user_name": user_name,
-            "user_id": user_id,
-            "content": content,
-            "comments": post_comments,
-            "timestamp": timestamp,
-        }
+        yield Message.Directory, user_info.update(
+            {
+                "content": content,
+                "comments": post_comments,
+                "timestamp": timestamp,
+            }
+        )
 
-    def _extract_comments_async(self, user_name, user_id, content, comments_queue, timestamp):
+    def _extract_comments_async(self, user_info, content, comments_queue, timestamp):
         """Asynchronous comment extraction using asyncio.gather"""
         log.info("Starting async comment extraction")
 
@@ -575,13 +560,13 @@ class FacebookCommentExtractor(FacebookExtractor):
         log.info(
             f"Async comment extraction completed, processed {len(post_comments)} comments"
         )
-        yield Message.Directory, {
-            "user_name": user_name,
-            "user_id": user_id,
-            "content": content,
-            "comments": post_comments,
-            "timestamp": timestamp,
-        }
+        yield Message.Directory, user_info.update(
+            {
+                "content": content,
+                "comments": post_comments,
+                "timestamp": timestamp,
+            }
+        )
 
     async def _async_process_comments(self, comments_queue):
         """Process comments asynchronously with dynamic queue growth"""
@@ -645,7 +630,9 @@ class FacebookCommentExtractor(FacebookExtractor):
                         comments_ids.add(result["id"])
                         successful_results += 1
                         if reply_count > 0:
-                            log.debug(f"Comment {result['id']} has {reply_count} total replies")
+                            log.debug(
+                                f"Comment {result['id']} has {reply_count} total replies"
+                            )
 
                 log.info(
                     f"Iteration {iteration} complete in {time() - start:.2f}: {successful_results} new comments processed, total: {len(post_comments)}"
@@ -733,9 +720,16 @@ class FacebookCommentExtractor(FacebookExtractor):
         if not comment_data.get("feedback", {}).get("url", ""):
             return
         tmp = self.request(
-                f'{comment_data["feedback"]["url"]}&{self.expansion_key}{comment_data["feedback"]["expansion_info"]["expansion_token"]}&{self.suffix_key}'
-            ).text
-        new_comments = [x for x in json.loads(text.extr(tmp, '"comment_list_renderer":', ',"comet_ufi'))["feedback"]["comment_rendering_instance_for_feed_location"]["comments"]["edges"]]
+            f'{comment_data["feedback"]["url"]}&{self.expansion_key}{comment_data["feedback"]["expansion_info"]["expansion_token"]}&{self.suffix_key}'
+        ).text
+        new_comments = [
+            x
+            for x in json.loads(
+                text.extr(tmp, '"comment_list_renderer":', ',"comet_ufi')
+            )["feedback"]["comment_rendering_instance_for_feed_location"]["comments"][
+                "edges"
+            ]
+        ]
         combined_comments = new_comments + comments_queue
         seen_comments = set()
         res = []
@@ -748,30 +742,43 @@ class FacebookCommentExtractor(FacebookExtractor):
 
     def parse_comment_data(self, comment_data):
         from datetime import datetime
+
         c_user_name = comment_data.get("user", {}).get("name", "")
         c_user_id = comment_data.get("user", {}).get("id", "")
-        c_text = (comment_data.get("body") or {}).get("text", "") # body can be None if comment is empty (photo exc...)
-        c_time = datetime.utcfromtimestamp(comment_data.get('created_time'))
+        c_text = (comment_data.get("body") or {}).get(
+            "text", ""
+        )  # body can be None if comment is empty (photo exc...)
+        c_time = datetime.utcfromtimestamp(comment_data.get("created_time"))
         c_url = comment_data.get("feedback", {}).get("url", "")
         c_id = comment_data.get("legacy_fbid", "")
+        c_pp = comment_data.get("author", {}).get("profile_picture_depth_0", {}).get("uri", "")
         return {
             "user_name": c_user_name,
             "user_id": c_user_id,
             "text": c_text,
             "time": c_time,
             "url": c_url,
-            "id": c_id
+            "id": c_id,
+            "profile_picture": c_pp,
         }
 
     def reload_comment(self, path_ids, comments_queue):
         parent_id = path_ids.pop(0)
-        comment = [x["node"] for x in comments_queue if x["node"]["legacy_fbid"] == parent_id][0]
+        comment = [
+            x["node"] for x in comments_queue if x["node"]["legacy_fbid"] == parent_id
+        ][0]
         while path_ids:
             path_id = path_ids.pop(0)
-            comment = [x["node"] for x in comment["feedback"]["replies_connection"]["edges"] if x["node"]["legacy_fbid"] == path_id][0]
+            comment = [
+                x["node"]
+                for x in comment["feedback"]["replies_connection"]["edges"]
+                if x["node"]["legacy_fbid"] == path_id
+            ][0]
         return comment
 
-    def _process_nested_replies(self, parent_ids, inner_comments, comments_ids, comments_queue):
+    def _process_nested_replies(
+        self, parent_ids, inner_comments, comments_ids, comments_queue
+    ):
         replies = []
         for ic in inner_comments:
             ic_data = ic["node"]
@@ -783,10 +790,21 @@ class FacebookCommentExtractor(FacebookExtractor):
                 raise exception.StopExtraction(
                     "This post does not have comments or is not accessible."
                 )
-            ic_data = self.reload_comment(parent_ids + [inner_doc["id"]], comments_queue)
-            if ic_data.get("feedback", {}).get("replies_connection"):  # must be reloaded to have inner edges
-                inner_inner_comments = ic_data["feedback"]["replies_connection"]["edges"]
-                inner_doc["replies"] = self._process_nested_replies(parent_ids + [inner_doc["id"]], inner_inner_comments, comments_ids, comments_queue)
+            ic_data = self.reload_comment(
+                parent_ids + [inner_doc["id"]], comments_queue
+            )
+            if ic_data.get("feedback", {}).get(
+                "replies_connection"
+            ):  # must be reloaded to have inner edges
+                inner_inner_comments = ic_data["feedback"]["replies_connection"][
+                    "edges"
+                ]
+                inner_doc["replies"] = self._process_nested_replies(
+                    parent_ids + [inner_doc["id"]],
+                    inner_inner_comments,
+                    comments_ids,
+                    comments_queue,
+                )
             else:
                 inner_doc["replies"] = []
             replies.append(inner_doc)
@@ -832,10 +850,12 @@ class FacebookCommentExtractor(FacebookExtractor):
         return {
             "direct_replies": direct_replies,
             "total_replies": total_replies,
-            "max_depth": max_depth
+            "max_depth": max_depth,
         }
 
-    async def _process_nested_replies_async(self, executor, parent_ids, inner_comments, comments_ids, comments_queue):
+    async def _process_nested_replies_async(
+        self, executor, parent_ids, inner_comments, comments_ids, comments_queue
+    ):
         """Asynchronously process nested replies"""
         if not inner_comments:
             return []
@@ -881,11 +901,15 @@ class FacebookCommentExtractor(FacebookExtractor):
                 successful_replies += 1
 
         if failed_replies > 0:
-            log.debug(f"Nested replies: {successful_replies} success, {failed_replies} failed")
+            log.debug(
+                f"Nested replies: {successful_replies} success, {failed_replies} failed"
+            )
 
         return replies
 
-    async def _async_process_single_reply(self, executor, loop, ic_data, parent_ids, comments_ids, comments_queue):
+    async def _async_process_single_reply(
+        self, executor, loop, ic_data, parent_ids, comments_ids, comments_queue
+    ):
         """Process a single reply asynchronously"""
         try:
             # Fetch additional comments for this reply
@@ -908,17 +932,27 @@ class FacebookCommentExtractor(FacebookExtractor):
 
             # Reload comment to get inner edges
             ic_data_reloaded = await loop.run_in_executor(
-                executor, self.reload_comment, parent_ids + [inner_doc["id"]], comments_queue
+                executor,
+                self.reload_comment,
+                parent_ids + [inner_doc["id"]],
+                comments_queue,
             )
 
             # Check if there are nested replies
-            if (ic_data_reloaded and 
-                ic_data_reloaded.get("feedback", {}).get("replies_connection", {}).get("edges")):
-                inner_inner_comments = ic_data_reloaded["feedback"]["replies_connection"]["edges"]
+            if ic_data_reloaded and ic_data_reloaded.get("feedback", {}).get(
+                "replies_connection", {}
+            ).get("edges"):
+                inner_inner_comments = ic_data_reloaded["feedback"][
+                    "replies_connection"
+                ]["edges"]
 
                 # Recursively process nested replies asynchronously
                 inner_doc["replies"] = await self._process_nested_replies_async(
-                    executor, parent_ids + [inner_doc["id"]], inner_inner_comments, comments_ids, comments_queue
+                    executor,
+                    parent_ids + [inner_doc["id"]],
+                    inner_inner_comments,
+                    comments_ids,
+                    comments_queue,
                 )
             else:
                 inner_doc["replies"] = []
@@ -931,10 +965,16 @@ class FacebookCommentExtractor(FacebookExtractor):
 
     def items(self):
         post_page = self.request(self.url).text
-        post_metadata = json.loads(text.extr(post_page, '"content":', ',"layout'))["story"]
+        post_metadata = json.loads(text.extr(post_page, '"content":', ',"layout'))[
+            "story"
+        ]
         group_id = post_metadata["target_group"]["id"]
         user_name = post_metadata["actors"][0]["name"]
-        user_id = json.loads(json.loads(text.extr(post_page, '"call_to_action":', ',"post_inform_treatment'))["story"]["tracking"])["page_insights"][group_id]["actor_id"]
+        user_id = json.loads(
+            json.loads(
+                text.extr(post_page, '"call_to_action":', ',"post_inform_treatment')
+            )["story"]["tracking"]
+        )["page_insights"][group_id]["actor_id"]
 
         # Extract and format timestamp
         timestamp_raw = [
@@ -948,9 +988,21 @@ class FacebookCommentExtractor(FacebookExtractor):
 
         timestamp = datetime.utcfromtimestamp(timestamp_raw)
 
-        content = post_metadata["comet_sections"]["message_container"]["story"]["message"]["text"]
+        # extract profile picture
+        profile_pic = json.loads(text.extr(post_page, '"context_layout":', ',"aymt'))[
+            "story"
+        ]["comet_sections"]["actor_photo"]["story"]["actors"][0]["profile_picture"][
+            "uri"
+        ]
+        content = post_metadata["comet_sections"]["message_container"]["story"][
+            "message"
+        ]["text"]
         try:
-            comments = json.loads(text.extr(post_page, '"comment_list_renderer":', ',"comet_ufi'))["feedback"]["comment_rendering_instance_for_feed_location"]["comments"]["edges"]
+            comments = json.loads(
+                text.extr(post_page, '"comment_list_renderer":', ',"comet_ufi')
+            )["feedback"]["comment_rendering_instance_for_feed_location"]["comments"][
+                "edges"
+            ]
         except KeyError:
             raise exception.StopExtraction(
                 "This post does not have comments or is not accessible."
@@ -959,4 +1011,9 @@ class FacebookCommentExtractor(FacebookExtractor):
             raise exception.StopExtraction(
                 "Failed to parse comments from the post page."
             )
-        return self.extract_comments(user_name, user_id, content, comments, timestamp)
+        return self.extract_comments(
+            {"username": user_name, "user_id": user_id, "profile_pic": profile_pic},
+            content,
+            comments,
+            timestamp,
+        )
