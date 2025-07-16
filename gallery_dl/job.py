@@ -909,8 +909,8 @@ class DataJob(Job):
         try:
             for msg in extractor:
                 self.dispatch(msg)
-        except exception.StopExtraction:
-            pass
+        except exception.StopExtraction as exc:
+            self.data.append((exc.__class__.__name__, str(exc.message)))
         except Exception as exc:
             self.data.append((exc.__class__.__name__, str(exc)))
         except BaseException:

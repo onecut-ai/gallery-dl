@@ -1001,7 +1001,7 @@ class FacebookCommentExtractor(FacebookExtractor):
             ]["text"]
         except TypeError:
             raise exception.StopExtraction(
-                "This post does not have text content or is not accessible."
+                message="This post does not have text content or is not accessible."
             )
         try:
             comments = json.loads(
