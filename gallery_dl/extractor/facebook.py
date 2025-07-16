@@ -994,9 +994,14 @@ class FacebookCommentExtractor(FacebookExtractor):
         ]["comet_sections"]["actor_photo"]["story"]["actors"][0]["profile_picture"][
             "uri"
         ]
-        content = post_metadata["comet_sections"]["message_container"]["story"][
-            "message"
-        ]["text"]
+        try:
+            content = post_metadata["comet_sections"]["message_container"]["story"][
+                "message"
+            ]["text"]
+        except TypeError:
+            raise exception.StopExtraction(
+                "This post does not have text content or is not accessible."
+            )
         try:
             comments = json.loads(
                 text.extr(post_page, '"comment_list_renderer":', ',"comet_ufi')
