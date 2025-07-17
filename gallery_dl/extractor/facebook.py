@@ -744,8 +744,8 @@ class FacebookCommentExtractor(FacebookExtractor):
     def parse_comment_data(self, comment_data):
         from datetime import datetime
 
-        c_user_name = comment_data.get("user", {}).get("name", "")
-        c_user_id = comment_data.get("user", {}).get("id", "")
+        c_user_name = comment_data.get("author", {}).get("name", "")
+        c_user_id = comment_data.get("author", {}).get("id", "")
         c_text = (comment_data.get("body") or {}).get(
             "text", ""
         )  # body can be None if comment is empty (photo exc...)
