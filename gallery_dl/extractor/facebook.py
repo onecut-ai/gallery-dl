@@ -760,7 +760,7 @@ class FacebookCommentExtractor(FacebookExtractor):
             "time": c_time,
             "url": c_url,
             "id": c_id,
-            "profile_picture": c_pp,
+            "profile_pic": c_pp,
         }
 
     def reload_comment(self, path_ids, comments_queue):
